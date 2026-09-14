@@ -66,12 +66,13 @@ jobs:
           cp "$SETUP" "$KIT/patches/gramify_setup.py"
           echo "patcher: $SETUP"
 
-          # ---------- 2) 15 java files (naam se) ----------
+          # ---------- 2) 18 java files (naam se) ----------
           miss=0
           for f in VoiceDsp VoiceEnhancer VoiceEnhancerFragment GramifyMusicFragment \
                    GramifyPlayer SaavnApi Song SongAdapter Json \
                    CallMixer CallMusicCapture CallMusicDecoder MusicShare \
-                   GramifyBubble GramifyBubbleService; do
+                   GramifyBubble GramifyBubbleService \
+                   DevgramBotPanel DevgramBotFragment DevgramBubbleService; do
             SRC="$(findone "$f.java" || true)"
             if [ -n "$SRC" ]; then
               cp "$SRC" "$PL/$PKG/$f.java"
@@ -110,8 +111,8 @@ jobs:
           # ---------- 5) verify ----------
           NJ=$(ls "$PL/$PKG"/*.java 2>/dev/null | wc -l)
           echo "payload ready: $NJ java files"
-          if [ "$miss" -gt 0 ] || [ "$NJ" -lt 15 ]; then
-            echo "::error::$NJ/15 java files mili. Upar '!! NAHI mila' dekho."
+          if [ "$miss" -gt 0 ] || [ "$NJ" -lt 18 ]; then
+            echo "::error::$NJ/18 java files mili. Upar '!! NAHI mila' dekho."
             exit 1
           fi
           echo "kit=$KIT" >> "$GITHUB_OUTPUT"
