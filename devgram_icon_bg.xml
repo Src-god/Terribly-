@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Devgram Remastered icon: BLACK & WHITE version of the real Telegram logo.
+     Asli Telegram icon blue + white tha — uska background ab kaala hai. -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android"
+    android:shape="rectangle">
+    <gradient
+        android:startColor="#1A1A1A"
+        android:centerColor="#0D0D0D"
+        android:endColor="#000000"
+        android:angle="270" />
+</shape>

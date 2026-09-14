@@ -1,0 +1,55 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+
+    <!-- Gramify Music -->
+    <string name="gramify_music_title">Gramify Music</string>
+    <string name="gramify_music_search_hint">Song, artist or movie...</string>
+    <string name="gramify_music_empty">Nothing is playing</string>
+    <string name="gramify_music_loading">Searching...</string>
+    <string name="gramify_music_search_btn">Search</string>
+    <string name="gramify_music_play">Play</string>
+    <string name="gramify_music_pause">Pause</string>
+    <string name="gramify_music_next">Next</string>
+    <string name="gramify_music_prev">Previous</string>
+    <string name="gramify_music_download">Download</string>
+    <string name="gramify_music_share">Share</string>
+    <string name="gramify_music_error">Playback error</string>
+    <string name="gramify_music_no_internet">No internet connection</string>
+
+    <!-- Gramify Voice -->
+    <string name="gramify_voice_title">Gramify Voice</string>
+    <string name="gramify_voice_enhancer">Voice Enhancer (Calls + Voice Chats)</string>
+    <string name="gramify_voice_on">Enhancer ON - Enhanced voice sent to other side</string>
+    <string name="gramify_voice_off">Enhancer OFF - Normal voice sent</string>
+    <string name="gramify_voice_live">LIVE - Applying in call</string>
+    <string name="gramify_voice_note">Note: Processing happens on your phone, outgoing voice only. Other side hears enhanced voice even on normal Telegram.</string>
+
+    <!-- Equalizer -->
+    <string name="gramify_eq_title">Equalizer</string>
+    <string name="gramify_eq_flat">EQ: Flat</string>
+    <string name="gramify_eq_bass">Bass Boost</string>
+    <string name="gramify_eq_vocal">Vocal Boost</string>
+    <string name="gramify_eq_treble">Treble Boost</string>
+    <string name="gramify_eq_custom">Custom</string>
+
+    <!-- Devgram Bot -->
+    <string name="devgram_bot_settings">Devgram Bot</string>
+    <string name="devgram_bot_settings_info">10 slots + parallel Name/Message flood control</string>
+    <string name="devgram_bot_title">Devgram Bot Manager</string>
+    <string name="devgram_bot_subtitle">Max 10 Bots | Flood Auto-Switch</string>
+    <string name="devgram_bot_group_link">Group Link / Chat ID (-100...)</string>
+    <string name="devgram_bot_name_section">NAME CHANGE</string>
+    <string name="devgram_bot_msg_section">MESSAGE SEND</string>
+    <string name="devgram_bot_threads">Threads (1-10)</string>
+    <string name="devgram_bot_text">Text</string>
+    <string name="devgram_bot_text_comma">Text (comma, separated)</string>
+    <string name="devgram_bot_position">Emoji Position</string>
+    <string name="devgram_bot_delay">Delay (sec) - 0 allowed</string>
+    <string name="devgram_bot_fancy">Fancy Font</string>
+    <string name="devgram_bot_start">START</string>
+    <string name="devgram_bot_stop">STOP</string>
+    <string name="devgram_bot_running">Running...</string>
+    <string name="devgram_bot_stopped">Stopped</string>
+    <string name="devgram_bot_flood_switch">Flood - switching bot group</string>
+
+</resources>
