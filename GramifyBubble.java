@@ -19,7 +19,6 @@ import android.widget.HorizontalScrollView;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.ProgressBar;
-import android.widget.ScrollView;
 import android.widget.SeekBar;
 import android.widget.Switch;
 import android.widget.TextView;
@@ -29,30 +28,16 @@ import org.telegram.messenger.AndroidUtilities;
 import org.telegram.messenger.R;
 
 /**
- * GramifyBubble — screen pe tairta hua round bubble (dono functions ek jagah).
+ * GramifyBubble — ek hi floating bubble, do panels ke saath:
+ *   1) VOICE / MUSIC  — real-time equalizer + mic boost + music in call
+ *   2) BOT MANAGER    — group link, name change, message send (DevgramBotPanel)
  *
- * <h3>Kaise dikhta hai</h3>
- * <pre>
- *      ┌───────────────┐
- *      │ DEVGRAM REMASTERED │   ← tap karne pe panel khulta hai
- *      │  [ Off ] [Clear Voice] [Studio] ... [MAX POWER]   ← saare modes (EQ)
- *      │  Mic boost ─────●──────── 0..36 dB
- *      │  Loudness ×───●────────── 1..8x
- *      │  Drive ──●────────────── 0..1
- *      │  Presence ────●───────── -18..+18 dB
- *      │  MIC ▓▓▓▓▓░░  OUT ▓▓▓▓▓▓░
- *      │  [x] Music in call (dono suno)      ← gaana saamne wale ko bhi
- *      │  Music volume ────●─────
- *      │  [ Open Devgram ]  [ Hide bubble ]
- *      └───────────────┘
- *            ( ⚪ )   ← ye round bubble drag kar sakte ho
- * </pre>
+ * Bubble ko drag karo, tap karo -> panel khulta hai.
+ * Panel ke BAHAR kahin bhi tap -> panel band (bubble wapas).
+ * Bubble khud kabhi gayab nahi hota — sirf service stop karne pe chhupata hai.
  *
- * Bubble ko drag karo, tap karo → panel; panel me sab live change hota hai
- * (call chal rahi ho to turant asar dikhega).
- *
- * Window type: {@code TYPE_APPLICATION_OVERLAY} (Android 8+) / {@code TYPE_PHONE} (purane)
- * — isliye "Display over other apps" permission chahiye (Settings se ek baar).
+ * Window type: TYPE_APPLICATION_OVERLAY (8+) / TYPE_PHONE (purane)
+ * — isliye "Display over other apps" permission chahiye.
  */
 public final class GramifyBubble {
 
@@ -62,24 +47,31 @@ public final class GramifyBubble {
     private static final int TEXT = 0xFFFFFFFF;
     private static final int GRAY = 0xFF8B98A5;
     private static final int GREEN = 0xFF4AD07A;
-    private static final int RED = 0xFFFF5A5A;
 
     private final Context context;
     private final WindowManager windowManager;
-    private final WindowManager.LayoutParams params;
 
-    private FrameLayout root;        // poora overlay (bubble + panel)
-    private View bubbleView;         // round bubble
-    private View panelView;          // expanded card
+    // ---- bubble window ----
+    private FrameLayout bubbleRoot;
+    private WindowManager.LayoutParams bubbleLp;
+    private boolean dragged = false;
+    private float downX, downY;
+    private int startX, startY;
+
+    // ---- panel window ----
+    private View panelView;
+    private WindowManager.LayoutParams panelLp;
+    private boolean panelOpen = false;
+
+    private LinearLayout musicPanel;
+    private DevgramBotPanel botPanel;
+    private TextView tabVoice, tabBot;
+
+    // ---- music/EQ live fields ----
     private TextView statusText;
     private TextView musicStatus;
     private ProgressBar inMeter, outMeter;
     private View[] chips;
-
-    private boolean expanded = false;
-    private boolean dragged = false;
-    private float downX, downY;
-    private int startX, startY;
 
     private final Handler handler = new Handler(Looper.getMainLooper());
     private final Runnable tick = new Runnable() {
@@ -92,19 +84,8 @@ public final class GramifyBubble {
 
     public GramifyBubble(Context context, WindowManager windowManager) {
         this.context = context;
-        this.windowManager = windowManager;
-        this.params = new WindowManager.LayoutParams(
-                ViewGroup.LayoutParams.WRAP_CONTENT,
-                ViewGroup.LayoutParams.WRAP_CONTENT,
-                Build.VERSION.SDK_INT >= 26
-                        ? WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
-                        : WindowManager.LayoutParams.TYPE_PHONE,
-                WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
-                        | WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
-                android.graphics.PixelFormat.TRANSLUCENT);
-        params.gravity = Gravity.TOP | Gravity.START;
-        params.x = dp(8);
-        params.y = dp(120);
+        this.windowManager = windowManager != null ? windowManager
+                : (WindowManager) context.getSystemService(Context.WINDOW_SERVICE);
     }
 
     /* ------------------------------------------------------------------ *
@@ -112,45 +93,55 @@ public final class GramifyBubble {
      * ------------------------------------------------------------------ */
 
     public void show() {
-        if (root != null) return;
-        root = new FrameLayout(context);
-        root.setLayoutParams(new FrameLayout.LayoutParams(
+        if (bubbleRoot != null) return;
+        bubbleRoot = new FrameLayout(context);
+        bubbleRoot.setLayoutParams(new FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        bubbleRoot.addView(buildBubble());
 
-        panelView = buildPanel();
-        panelView.setVisibility(View.GONE);
-        root.addView(panelView, wrap());
-
-        bubbleView = buildBubble();
-        FrameLayout.LayoutParams blp = wrap();
-        blp.gravity = Gravity.BOTTOM | Gravity.END;
-        root.addView(bubbleView, blp);
+        int type = overlayType();
+        bubbleLp = new WindowManager.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+                type,
+                WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
+                        | WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
+                android.graphics.PixelFormat.TRANSLUCENT);
+        bubbleLp.gravity = Gravity.TOP | Gravity.START;
+        bubbleLp.x = dp(8);
+        bubbleLp.y = dp(120);
 
         try {
-            windowManager.addView(root, params);
+            windowManager.addView(bubbleRoot, bubbleLp);
             handler.post(tick);
         } catch (Throwable t) {
-            root = null;
+            bubbleRoot = null;
         }
     }
 
     public void hide() {
+        closePanel();
         handler.removeCallbacks(tick);
-        final FrameLayout r = root;
-        root = null;
+        final FrameLayout r = bubbleRoot;
+        bubbleRoot = null;
         if (r != null) {
-            try {
-                windowManager.removeView(r);
-            } catch (Throwable ignore) {
-            }
+            try { windowManager.removeView(r); } catch (Throwable ignore) {}
         }
     }
 
-    public boolean isShown() { return root != null; }
+    public boolean isShown() { return bubbleRoot != null; }
+    public boolean isPanelOpen() { return panelOpen; }
 
-    private FrameLayout.LayoutParams wrap() {
-        return new FrameLayout.LayoutParams(
-                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+    private int overlayType() {
+        return Build.VERSION.SDK_INT >= 26
+                ? WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
+                : WindowManager.LayoutParams.TYPE_PHONE;
+    }
+
+    private void updateWindow() {
+        try {
+            if (bubbleRoot != null) windowManager.updateViewLayout(bubbleRoot, bubbleLp);
+        } catch (Throwable ignore) {}
     }
 
     /* ------------------------------------------------------------------ *
@@ -168,10 +159,7 @@ public final class GramifyBubble {
         bg.setStroke(dp(2), 0x66FFFFFF);
 
         final ImageView icon = new ImageView(context);
-        try {
-            icon.setImageResource(R.drawable.gramify_mic);
-        } catch (Throwable ignore) {
-        }
+        try { icon.setImageResource(R.drawable.gramify_mic); } catch (Throwable ignore) {}
         icon.setColorFilter(Color.WHITE);
         icon.setPadding(dp(14), dp(14), dp(14), dp(14));
         holder.addView(icon, new FrameLayout.LayoutParams(
@@ -184,8 +172,8 @@ public final class GramifyBubble {
                 case MotionEvent.ACTION_DOWN:
                     downX = e.getRawX();
                     downY = e.getRawY();
-                    startX = params.x;
-                    startY = params.y;
+                    startX = bubbleLp.x;
+                    startY = bubbleLp.y;
                     dragged = false;
                     v.setAlpha(0.75f);
                     return true;
@@ -194,8 +182,8 @@ public final class GramifyBubble {
                     final int dy = (int) (e.getRawY() - downY);
                     if (Math.abs(dx) > dp(6) || Math.abs(dy) > dp(6)) dragged = true;
                     if (dragged) {
-                        params.x = startX + dx;
-                        params.y = startY + dy;
+                        bubbleLp.x = startX + dx;
+                        bubbleLp.y = startY + dy;
                         updateWindow();
                     }
                     return true;
@@ -219,28 +207,114 @@ public final class GramifyBubble {
         return holder;
     }
 
+    /* ------------------------------------------------------------------ *
+     *  panel window (music/EQ + bot, outside tap = close)
+     * ------------------------------------------------------------------ */
+
     private void togglePanel() {
-        expanded = !expanded;
-        if (panelView != null) panelView.setVisibility(expanded ? View.VISIBLE : View.GONE);
+        if (panelOpen) closePanel();
+        else openPanel();
     }
 
-    private void updateWindow() {
+    private void openPanel() {
+        if (panelOpen) return;
         try {
-            if (root != null) windowManager.updateViewLayout(root, params);
-        } catch (Throwable ignore) {
+            if (panelView == null) {
+                final LinearLayout container = new LinearLayout(context);
+                container.setOrientation(LinearLayout.VERTICAL);
+                container.setBackground(round(BG, dp(16), 0x33000000, dp(1)));
+                container.setPadding(dp(14), dp(12), dp(14), dp(12));
+                container.setElevation(dp(10));
+
+                // ---- tabs ----
+                final LinearLayout tabs = new LinearLayout(context);
+                tabs.setOrientation(LinearLayout.HORIZONTAL);
+                tabVoice = button("Voice / Music", v -> showMusicTab());
+                tabBot = button("Bot Manager", v -> showBotTab());
+                tabs.addView(tabVoice, weight());
+                tabs.addView(tabBot, weight());
+                container.addView(tabs);
+
+                // ---- content ----
+                final FrameLayout content = new FrameLayout(context);
+                musicPanel = buildMusicPanel();
+                botPanel = new DevgramBotPanel(context, this::closePanel);
+                botPanel.setVisibility(View.GONE);
+                content.addView(musicPanel, new FrameLayout.LayoutParams(
+                        ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+                content.addView(botPanel, new FrameLayout.LayoutParams(
+                        ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+                container.addView(content);
+
+                panelView = container;
+
+                final int type = overlayType();
+                panelLp = new WindowManager.LayoutParams(
+                        WindowManager.LayoutParams.MATCH_PARENT,
+                        WindowManager.LayoutParams.WRAP_CONTENT,
+                        type,
+                        WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL
+                                | WindowManager.LayoutParams.FLAG_WATCH_OUTSIDE_TOUCH,
+                        android.graphics.PixelFormat.TRANSLUCENT);
+                panelLp.gravity = Gravity.CENTER;
+                panelLp.softInputMode = WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE;
+
+                // panel ke BAHAR tap -> band (bubble wapas)
+                panelView.setOnTouchListener((v, event) -> {
+                    if (event.getAction() == MotionEvent.ACTION_OUTSIDE) {
+                        closePanel();
+                        return true;
+                    }
+                    return false;
+                });
+
+                highlightTab(true);
+            }
+
+            windowManager.addView(panelView, panelLp);
+            panelOpen = true;
+            updateChips();
+        } catch (Throwable ignore) {}
+    }
+
+    public void closePanel() {
+        if (!panelOpen || panelView == null) return;
+        try { windowManager.removeView(panelView); } catch (Throwable ignore) {}
+        panelOpen = false;
+    }
+
+    private void showMusicTab() {
+        if (musicPanel != null) musicPanel.setVisibility(View.VISIBLE);
+        if (botPanel != null) botPanel.setVisibility(View.GONE);
+        highlightTab(true);
+    }
+
+    private void showBotTab() {
+        if (musicPanel != null) musicPanel.setVisibility(View.GONE);
+        if (botPanel != null) botPanel.setVisibility(View.VISIBLE);
+        highlightTab(false);
+    }
+
+    private void highlightTab(boolean voice) {
+        if (tabVoice != null) {
+            tabVoice.setTextColor(voice ? 0xFF17212B : TEXT);
+            tabVoice.setBackground(round(voice ? GREEN : 0x33FFFFFF, dp(14),
+                    voice ? GREEN : 0x44FFFFFF, dp(1)));
+        }
+        if (tabBot != null) {
+            tabBot.setTextColor(voice ? TEXT : 0xFF17212B);
+            tabBot.setBackground(round(voice ? 0x33FFFFFF : GREEN, dp(14),
+                    voice ? 0x44FFFFFF : GREEN, dp(1)));
         }
     }
 
     /* ------------------------------------------------------------------ *
-     *  panel — dono functions (voice EQ + music)
+     *  panel — VOICE / MUSIC (real-time EQ + music in call)
      * ------------------------------------------------------------------ */
 
-    private View buildPanel() {
+    private LinearLayout buildMusicPanel() {
         final LinearLayout card = new LinearLayout(context);
         card.setOrientation(LinearLayout.VERTICAL);
-        card.setBackground(round(BG, dp(16), 0x33000000, dp(1)));
-        card.setPadding(dp(14), dp(12), dp(14), dp(12));
-        card.setElevation(dp(10));
 
         final TextView title = new TextView(context);
         title.setText("DEVGRAM REMASTERED");
@@ -290,8 +364,8 @@ public final class GramifyBubble {
                 VoiceEnhancer.setPreset(context, preset);
                 updateChips();
                 updateLive();
-                Toast.makeText(context, VoiceDsp.PRESET_NAME[preset] + " — " + VoiceDsp.PRESET_DESC[preset],
-                        Toast.LENGTH_SHORT).show();
+                Toast.makeText(context, VoiceDsp.PRESET_NAME[preset] + " — "
+                        + VoiceDsp.PRESET_DESC[preset], Toast.LENGTH_SHORT).show();
             });
             final LinearLayout.LayoutParams clp = new LinearLayout.LayoutParams(
                     ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
@@ -358,7 +432,6 @@ public final class GramifyBubble {
         buttons.addView(button("Hide bubble", v -> GramifyBubbleService.stop(context)), weight());
         card.addView(buttons);
 
-        updateChips();
         return card;
     }
 
@@ -369,7 +442,7 @@ public final class GramifyBubble {
         return lp;
     }
 
-    private View button(String text, View.OnClickListener click) {
+    private TextView button(String text, View.OnClickListener click) {
         final TextView b = new TextView(context);
         b.setText(text);
         b.setTextColor(TEXT);
@@ -479,7 +552,6 @@ public final class GramifyBubble {
             final Intent i = new Intent(context, org.telegram.ui.LaunchActivity.class);
             i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
             context.startActivity(i);
-            Toast.makeText(context, "Devgram → Settings → Devgram Voice", Toast.LENGTH_LONG).show();
         } catch (Throwable t) {
             Toast.makeText(context, "App kholo → Settings → Devgram Voice", Toast.LENGTH_LONG).show();
         }
