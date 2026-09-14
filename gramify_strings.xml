@@ -23,4 +23,8 @@
     <string name="gramify_voice_live">LIVE — call me apply ho raha hai</string>
 
     <string name="gramify_voice_note">Note: ye processing aapke phone me hoti hai, outgoing voice par — saamne wala normal Telegram par bhi enhanced voice sunta hai.</string>
+
+    <!-- Devgram Bot -->
+    <string name="devgram_bot_settings">Devgram Bot</string>
+    <string name="devgram_bot_settings_info">Bot tokens + floating panel</string>
 </resources>
