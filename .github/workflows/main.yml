@@ -132,7 +132,7 @@ jobs:
       #  ROBUST CLONE: submodule network failure = #1 build-fail ka karan.
       #  Ab submodules alag se, 3 baar retry ke saath chalti hain.
       # ------------------------------------------------------------------ #
-      - name: 6) Telegram clone (proven: recurse-submodules + shallow)
+      - name: "6) Telegram clone (recurse-submodules + shallow)"
         run: |
           set -e
           cd "$GITHUB_WORKSPACE"
