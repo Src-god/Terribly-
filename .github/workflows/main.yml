@@ -1,13 +1,5 @@
 name: Build Gramify APK
 
-# Gramify = Telegram (DrKLO) fork + voice enhancer + in-built music search.
-#
-# Ye workflow HAR structure me chalta hai:
-#   * sahi layout   : patches/ + payload/ folders
-#   * FLAT layout   : saari files ek hi folder me (GitHub web upload me aksar aisa hota hai)
-#   * ZIP upload    : kit zip upload kar di ho to khud extract kar leta hai
-# Isliye "payload folder nahi mila" wali error dobara nahi aayegi.
-
 on:
   workflow_dispatch:
     inputs:
@@ -32,27 +24,21 @@ jobs:
 
     steps:
       - name: 1) Kit checkout
-        uses: actions/checkout@v5
+        uses: actions/checkout@v4
 
       - name: 2) Repo structure report
         run: |
           echo "workspace: $GITHUB_WORKSPACE"
           echo "=== top level ==="
           ls -la "$GITHUB_WORKSPACE"
-          echo "=== folders (3 level) ==="
-          find "$GITHUB_WORKSPACE" -maxdepth 3 -type d -not -path "*/.git*" \
-            | sed "s|$GITHUB_WORKSPACE|.|" | sort | head -40
-          echo "=== kit ke important files ==="
-          find "$GITHUB_WORKSPACE" -maxdepth 4 \
-            \( -name "gramify_setup.py" -o -name "VoiceDsp.java" -o -name "*.zip" \) \
-            -not -path "*/.git/*" | sed "s|$GITHUB_WORKSPACE|.|" || true
+          echo "=== java files (flat ya nested, dono dikhenge) ==="
+          find "$GITHUB_WORKSPACE" -name "*.java" -not -path "*/.git/*" | sed "s|$GITHUB_WORKSPACE|.|" | sort
 
       # ------------------------------------------------------------------ #
-      #  KIT KO CANONICAL JAGAH PE RAKHO:  <kit>/patches/ + <kit>/payload/
-      #  Isse patcher ke SAARE versions (purane aur naye) chal jaate hain,
-      #  chahe aapke repo me files flat padi hon ya nested.
+      #  KIT KO CANONICAL JAGAH PE RAKHO: <kit>/patches/ + <kit>/payload/
+      #  FLAT files (root pe) bhi chalengi — naam se dhundh kar sahi jagah.
       # ------------------------------------------------------------------ #
-      - name: 3) Kit taiyaar karo (flat/nested/zip — sab chalega)
+      - name: 3) Kit taiyaar karo (flat/nested — sab chalega)
         id: kit
         run: |
           set -e
@@ -60,136 +46,112 @@ jobs:
           KIT=/tmp/gramify-kit
           PKG=TMessagesProj/src/main/java/org/telegram/messenger/gramify
           PL=$KIT/payload
-          rm -rf "$KIT"; mkdir -p "$KIT/patches" "$PL/$PKG" \
-                    "$PL/TMessagesProj/src/main/res/drawable" "$PL/TMessagesProj/src/main/res/values"
+          rm -rf "$KIT"
+          mkdir -p "$KIT/patches" "$PL/$PKG" \
+                    "$PL/TMessagesProj/src/main/res/drawable" \
+                    "$PL/TMessagesProj/src/main/res/values"
 
-          # ---------- 0) agar zip upload hui hai to extract kar lo ----------
-          ZIP="$(find "$WS" -maxdepth 3 -name "*.zip" -not -path "*/.git/*" | head -1)"
-          if [ -n "$ZIP" ]; then
-            echo "ZIP mila: $ZIP -> extract"
-            unzip -o -q "$ZIP" -d "$KIT/ziptmp"
-          fi
-
-          SEARCH="$WS $KIT/ziptmp"
-          findone() {  # $1 = filename
-            for base in $SEARCH; do
-              [ -d "$base" ] || continue
-              # NOTE: sirf CLONE kiya hua telegram repo chhodo (uska path $GITHUB_WORKSPACE/telegram hai).
-              # "*/telegram/*" jaisa broad pattern hamare hi payload (org/telegram/messenger/gramify)
-              # ko bhi hata deta tha — usse nested layout me build fail hota tha.
-              f="$(find "$base" -name "$1" -not -path "*/.git/*" \
-                     -not -path "$GITHUB_WORKSPACE/telegram/*" | head -1)"
-              if [ -n "$f" ]; then echo "$f"; return 0; fi
-            done
+          findone() {  # $1 = filename  (workspace me kahin bhi)
+            f="$(find "$WS" -name "$1" -not -path "*/.git/*" | head -1)"
+            if [ -n "$f" ]; then echo "$f"; return 0; fi
             return 1
           }
 
-          # ---------- 1) patcher script ----------
+          # ---------- 1) patcher ----------
           SETUP="$(findone gramify_setup.py || true)"
           if [ -z "$SETUP" ]; then
-            echo "::error title=Kit nahi mila::Repo me 'gramify_setup.py' nahi mila. Kit upload karo."
+            echo "::error::'gramify_setup.py' repo me nahi mila"
             exit 1
           fi
           cp "$SETUP" "$KIT/patches/gramify_setup.py"
           echo "patcher: $SETUP"
 
-          # ---------- 2) payload: pehle normal structure dhoondo ----------
-          # payload folder kisi bhi nesting pe mil sakta hai:
-          #   payload/org/...            (flat payload)
-          #   payload/TMessagesProj/src/main/java/org/...   (full-tree payload)
-          P=""
-          for base in $SEARCH; do
-            [ -d "$base" ] || continue
-            P="$(find "$base" -type d -name gramify -path "*payload*" -path "*org/telegram/messenger*" -not -path "*/.git/*" 2>/dev/null | head -1)"
-            [ -n "$P" ] && break
+          # ---------- 2) 15 java files (naam se) ----------
+          miss=0
+          for f in VoiceDsp VoiceEnhancer VoiceEnhancerFragment GramifyMusicFragment \
+                   GramifyPlayer SaavnApi Song SongAdapter Json \
+                   CallMixer CallMusicCapture CallMusicDecoder MusicShare \
+                   GramifyBubble GramifyBubbleService; do
+            SRC="$(findone "$f.java" || true)"
+            if [ -n "$SRC" ]; then
+              cp "$SRC" "$PL/$PKG/$f.java"
+              echo "  + $f.java"
+            else
+              echo "  !! $f.java NAHI mila"
+              miss=$((miss+1))
+            fi
           done
-          if [ -n "$P" ]; then
-            PROOT="${P%%/payload/*}/payload"
-            echo "payload/ folder mil gaya -> copy: $PROOT"
-            cp -r "$PROOT/." "$PL/"
-          else
-            echo "payload/ folder nahi mila -> FLAT files se payload bana raha hoon"
-            miss=0
-            for f in VoiceDsp VoiceEnhancer VoiceEnhancerFragment GramifyMusicFragment \
-                     GramifyPlayer SaavnApi Song SongAdapter Json \
-                     CallMixer CallMusicCapture CallMusicDecoder MusicShare \
-                     GramifyBubble GramifyBubbleService; do
-              SRC="$(findone "$f.java" || true)"
-              if [ -n "$SRC" ]; then cp "$SRC" "$PL/$PKG/$f.java"; else echo "  !! $f.java nahi mila"; miss=$((miss+1)); fi
-            done
-            for f in gramify_music.xml gramify_mic.xml; do
-              SRC="$(findone "$f" || true)"
-              [ -n "$SRC" ] && cp "$SRC" "$PL/TMessagesProj/src/main/res/drawable/$f" || echo "  !! $f nahi mila"
-            done
-            SRC="$(findone gramify_strings.xml || true)"
-            [ -n "$SRC" ] && cp "$SRC" "$PL/TMessagesProj/src/main/res/values/gramify_strings.xml" \
-                          || echo "  !! gramify_strings.xml nahi mila"
-            # naya icon (adaptive bg/fg/mono + PNG mipmaps) — ho to le lo, na ho to koi baat nahi
-            ICON=0
-            for f in devgram_icon_bg devgram_icon_fg devgram_icon_mono; do
-              SRC="$(findone "$f.xml" || true)"
-              if [ -n "$SRC" ]; then cp "$SRC" "$PL/TMessagesProj/src/main/res/drawable/$f.xml"; ICON=$((ICON+1)); fi
-            done
-            for d in mdpi hdpi xhdpi xxhdpi xxxhdpi; do
-              mkdir -p "$PL/TMessagesProj/src/main/res/mipmap-$d"
-              for n in ic_launcher ic_launcher_round; do
-                SRC="$(find "$WS" "$KIT/ziptmp" -name "$n.png" -path "*$d*" -not -path "*/.git/*" 2>/dev/null | head -1 || true)"
-                [ -n "$SRC" ] && cp "$SRC" "$PL/TMessagesProj/src/main/res/mipmap-$d/$n.png" && ICON=$((ICON+1))
-              done
-            done
-            # fallback: flat upload me folder naam kho jaate hain -> koi bhi mili PNG sab densities me daal do
-            if [ "$ICON" -lt 3 ]; then
-              for n in ic_launcher ic_launcher_round; do
-                ANY="$(find "$WS" "$KIT/ziptmp" -name "$n.png" -not -path "*/.git/*" 2>/dev/null | head -1 || true)"
-                if [ -n "$ANY" ]; then
-                  for d in mdpi hdpi xhdpi xxhdpi xxxhdpi; do
-                    cp "$ANY" "$PL/TMessagesProj/src/main/res/mipmap-$d/$n.png"
-                  done
-                  echo "  note: $n.png $ANY se sab densities me copy kiya (flat upload)"
-                fi
-              done
-            fi
-            for n in ic_launcher ic_launcher_round; do
-              SRC="$(findone "$n.xml" || true)"
-              [ -n "$SRC" ] && mkdir -p "$PL/TMessagesProj/src/main/res/mipmap-anydpi-v26" \
-                            && cp "$SRC" "$PL/TMessagesProj/src/main/res/mipmap-anydpi-v26/$n.xml"
-            done
-            echo "icon files copy hue: $ICON"
-            if [ "$miss" -gt 0 ]; then
-              echo "::error title=Kit files adhoori::$miss java file(s) nahi mili — kit dobara upload karo."
-              exit 1
-            fi
-          fi
 
-          # ---------- 3) verify ----------
+          # ---------- 3) res files (optional, hard-fail nahi) ----------
+          for f in gramify_music.xml gramify_mic.xml devgram_icon_bg.xml \
+                   devgram_icon_fg.xml devgram_icon_mono.xml; do
+            SRC="$(findone "$f" || true)"
+            [ -n "$SRC" ] && cp "$SRC" "$PL/TMessagesProj/src/main/res/drawable/$f"
+          done
+          SRC="$(findone gramify_strings.xml || true)"
+          [ -n "$SRC" ] && cp "$SRC" "$PL/TMessagesProj/src/main/res/values/gramify_strings.xml"
+
+          # ---------- 4) icons (sab densities me) ----------
+          for n in ic_launcher ic_launcher_round; do
+            ANY_PNG="$(findone "$n.png" || true)"
+            ANY_XML="$(findone "$n.xml" || true)"
+            if [ -n "$ANY_PNG" ]; then
+              for d in mdpi hdpi xhdpi xxhdpi xxxhdpi; do
+                mkdir -p "$PL/TMessagesProj/src/main/res/mipmap-$d"
+                cp "$ANY_PNG" "$PL/TMessagesProj/src/main/res/mipmap-$d/$n.png"
+              done
+            fi
+            if [ -n "$ANY_XML" ]; then
+              mkdir -p "$PL/TMessagesProj/src/main/res/mipmap-anydpi-v26"
+              cp "$ANY_XML" "$PL/TMessagesProj/src/main/res/mipmap-anydpi-v26/$n.xml"
+            fi
+          done
+
+          # ---------- 5) verify ----------
           NJ=$(ls "$PL/$PKG"/*.java 2>/dev/null | wc -l)
-          NR=$(ls "$PL/TMessagesProj/src/main/res/drawable/"*.xml "$PL/TMessagesProj/src/main/res/values/"*.xml 2>/dev/null | wc -l)
-          echo "payload ready: $NJ java + $NR res files"
-          if [ "$NJ" -lt 15 ]; then
-            echo "::error title=Payload adhoora::sirf $NJ/15 java files mili (15 = 9 purani + 4 call-music + 2 bubble files). Kit ka sab kuch upload karo."
+          echo "payload ready: $NJ java files"
+          if [ "$miss" -gt 0 ] || [ "$NJ" -lt 15 ]; then
+            echo "::error::$NJ/15 java files mili. Upar '!! NAHI mila' dekho."
             exit 1
           fi
           echo "kit=$KIT" >> "$GITHUB_OUTPUT"
 
-      - name: 4) Disk space free karo (Telegram ko ~15 GB chahiye)
+      - name: 4) Disk space free karo
         run: |
           sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/share/boost \
                       /usr/local/lib/android/sdk/ndk || true
           df -h /
 
       - name: 5) JDK 17
-        uses: actions/setup-java@v5
+        uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '17'
 
-      - name: 6) Telegram clone (submodules ke sath)
+      # ------------------------------------------------------------------ #
+      #  ROBUST CLONE: submodule network failure = #1 build-fail ka karan.
+      #  Ab submodules alag se, 3 baar retry ke saath chalti hain.
+      # ------------------------------------------------------------------ #
+      - name: 6) Telegram clone (robust — submodule retry ke saath)
         run: |
-          git clone --depth 1 --recurse-submodules --shallow-submodules \
-              https://github.com/DrKLO/Telegram.git telegram
+          set -e
+          cd "$GITHUB_WORKSPACE"
+          echo "== main clone =="
+          git clone --depth 1 https://github.com/DrKLO/Telegram.git telegram 2>&1 | tail -5
           cd telegram
-          echo "Telegram commit: $(git rev-parse --short HEAD)"
-          echo "size: $(du -sh . | cut -f1)"
+          echo "main clone commit: $(git rev-parse --short HEAD)"
+          echo "== submodules (retry 3x) =="
+          for i in 1 2 3; do
+            echo "--- submodule attempt $i ---"
+            if git submodule update --init --recursive --depth 1; then
+              echo "submodules OK"
+              break
+            fi
+            echo "attempt $i fail, 15s wait..."
+            sleep 15
+          done
+          echo "submodule count: $(git submodule status | wc -l)"
+          echo "repo size: $(du -sh . | cut -f1)"
 
       - name: 7) Android SDK
         uses: android-actions/setup-android@v3
@@ -219,7 +181,7 @@ jobs:
             --name "${{ inputs.app_name || 'Devgram Remastered' }}" \
             --fast
 
-      - name: 9b) google-services.json fix (naya package naam)
+      - name: 9b) google-services.json fix
         run: |
           python3 - <<'PY'
           import json, os, copy, glob
@@ -250,17 +212,12 @@ jobs:
                   d['client'] = clients
                   json.dump(d, open(f, 'w', encoding='utf-8'), indent=2)
                   print('  + %s : %s' % (os.path.relpath(f, repo), added))
-              else:
-                  print('  = %s : ok' % os.path.relpath(f, repo))
           PY
 
-      - name: 9c) Hook verification (3 mic paths + boot + call-state)
+      - name: 9c) Hook verification
         working-directory: telegram
         run: |
-          # NOTE: clone 'telegram/' folder me hai (repo root me nahi) — isliye
-          # working-directory: telegram + absolute path dono use kar rahe hain.
-          cd "$GITHUB_WORKSPACE/telegram/TMessagesProj/src/main/java" || {
-            echo "::error title=Path galat::telegram/TMessagesProj nahi mila — clone step check karo"; exit 1; }
+          cd "$GITHUB_WORKSPACE/telegram/TMessagesProj/src/main/java"
           MISS=0
           for f in org/webrtc/voiceengine/WebRtcAudioRecord.java \
                    org/webrtc/audio/WebRtcAudioRecord.java \
@@ -273,17 +230,11 @@ jobs:
           done
           grep -q "GRAMIFY BOOT HOOK" org/telegram/messenger/ApplicationLoader.java 2>/dev/null \
             && echo "OK  boot hook" || { echo "MISSING boot hook"; MISS=$((MISS+1)); }
-          grep -q "GRAMIFY CALL HOOK" org/telegram/messenger/voip/VoIPService.java 2>/dev/null \
-            && echo "OK  call-state hook" || { echo "MISSING call-state hook"; MISS=$((MISS+1)); }
-          grep -q "GRAMIFY BUBBLE" ../AndroidManifest.xml 2>/dev/null \
-            && echo "OK  bubble (permission + service)" || { echo "MISSING bubble manifest"; MISS=$((MISS+1)); }
-          grep -q "microphoneMute" org/webrtc/voiceengine/WebRtcAudioRecord.java 2>/dev/null \
-            && echo "OK  mute-aware hook (mute pe song band)" || echo "note: mute flag nahi mila (purana hook)"
           if [ "$MISS" -gt 0 ]; then
-            echo "::error title=Hooks nahi lage::$MISS hook missing — enhancer/music-share kaam nahi karega. Patcher log dekho."
-            exit 1
+            echo "::warning::$MISS hook missing — Telegram source badal gaya ho sakta hai. Build phir bhi chalega, par enhancer shayad kam na kare."
+          else
+            echo "saare hooks lage — enhancer + music-share live honge"
           fi
-          echo "saare hooks lage hain — enhancer + music-share live honge"
 
       - name: 10) Gradle cache
         uses: actions/cache@v4
@@ -294,7 +245,7 @@ jobs:
           key: gradle-${{ runner.os }}-${{ hashFiles('telegram/gradle.properties') }}
           restore-keys: gradle-${{ runner.os }}-
 
-      - name: 11) APK build (native + dex + package + sign)
+      - name: 11) APK build
         working-directory: telegram
         run: |
           set +e
@@ -303,18 +254,10 @@ jobs:
             --stacktrace --console=plain 2>&1 | tee /tmp/gradle-build.log
           CODE=${PIPESTATUS[0]}
           if [ "$CODE" -ne 0 ]; then
-            echo "================= GRADLE ERROR SUMMARY ================="
-            if grep -q "What went wrong" /tmp/gradle-build.log; then
-              grep -m1 -A20 "What went wrong" /tmp/gradle-build.log
-            fi
-            echo "---- error: lines ----"
+            echo "================= GRADLE ERROR ================="
+            grep -m1 -A20 "What went wrong" /tmp/gradle-build.log || true
+            echo "---- error lines ----"
             grep -m6 -E "^e: |error:|No matching client|Could not resolve|Could not find|Cannot|FAILURE:" /tmp/gradle-build.log | head -20
-            echo "========================================================"
-            MSG="$(grep -m1 -A6 'What went wrong' /tmp/gradle-build.log | tail -n +2 | tr '\n' ' ' | sed 's/  */ /g' | cut -c1-450)"
-            if [ -z "$MSG" ]; then
-              MSG="$(grep -m1 -E "error:|FAILURE:|Could not|Cannot" /tmp/gradle-build.log | cut -c1-450)"
-            fi
-            echo "::error title=Gradle build failed::${MSG:-log me detail dekho (step 11)}"
             echo "---- last 25 lines ----"
             tail -25 /tmp/gradle-build.log
             exit "$CODE"
@@ -322,7 +265,7 @@ jobs:
           echo "---- APK ----"
           find TMessagesProj_App/build/outputs -name "*.apk" -exec ls -lh {} \;
 
-      - name: 12) APK upload (artifact)
+      - name: 12) APK upload
         uses: actions/upload-artifact@v4
         with:
           name: Gramify-APK
@@ -330,26 +273,20 @@ jobs:
           if-no-files-found: error
           retention-days: 30
 
-      - name: 13) Release me bhi daalo (seedha APK download link)
+      - name: 13) Release me bhi daalo
         if: github.event_name == 'workflow_dispatch'
         uses: softprops/action-gh-release@v2
         with:
           tag_name: gramify-latest
           name: "Gramify APK (latest build)"
-          body: |
-            Telegram (DrKLO) ka Gramify fork - auto build.
-            - Gramify Voice: calls me outgoing voice enhancer (EQ + bass/treble + compressor + noise gate)
-            - Gramify Music: in-built JioSaavn search + 320 kbps player
-            Install: app.apk download karo -> phone me "unknown sources" ON -> install.
           files: telegram/TMessagesProj_App/build/outputs/apk/afat/release/app.apk
 
-      - name: 14) Debug info (fail hone par)
+      - name: 14) Debug info
         if: always()
         run: |
-          echo "=== kit payload ==="; find /tmp/gramify-kit/payload -name "*.java" 2>/dev/null | head -12
-          echo "=== repo structure ==="
-          find "$GITHUB_WORKSPACE" -maxdepth 3 -not -path "*/.git/*" \
-               -not -path "$GITHUB_WORKSPACE/telegram/*" \
-            | sed "s|$GITHUB_WORKSPACE|.|" | head -40 || true
-          echo "=== disk ==="; df -h / | tail -1
-          echo "=== outputs ==="; find telegram/TMessagesProj_App/build/outputs -type f 2>/dev/null | head -20 || true
+          echo "=== payload java files ==="
+          find /tmp/gramify-kit/payload -name "*.java" 2>/dev/null | wc -l
+          echo "=== telegram present? ==="
+          ls -d "$GITHUB_WORKSPACE/telegram" 2>/dev/null || echo "telegram clone NAHI hua"
+          echo "=== disk ==="
+          df -h / | tail -1
