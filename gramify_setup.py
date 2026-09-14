@@ -84,6 +84,9 @@ FLAT_FILES = {
     "MusicShare.java":            "TMessagesProj/src/main/java/org/telegram/messenger/gramify/MusicShare.java",
     "GramifyBubble.java":         "TMessagesProj/src/main/java/org/telegram/messenger/gramify/GramifyBubble.java",
     "GramifyBubbleService.java":  "TMessagesProj/src/main/java/org/telegram/messenger/gramify/GramifyBubbleService.java",
+    "DevgramBotPanel.java":       "TMessagesProj/src/main/java/org/telegram/messenger/gramify/DevgramBotPanel.java",
+    "DevgramBotFragment.java":    "TMessagesProj/src/main/java/org/telegram/messenger/gramify/DevgramBotFragment.java",
+    "DevgramBubbleService.java":  "TMessagesProj/src/main/java/org/telegram/messenger/gramify/DevgramBubbleService.java",
     "gramify_music.xml":          "TMessagesProj/src/main/res/drawable/gramify_music.xml",
     "gramify_mic.xml":            "TMessagesProj/src/main/res/drawable/gramify_mic.xml",
     "gramify_strings.xml":        "TMessagesProj/src/main/res/values/gramify_strings.xml",
@@ -410,6 +413,10 @@ def step_manifest(repo):
            '    <service\n'
            '        android:name="org.telegram.messenger.gramify.GramifyBubbleService"\n'
            '        android:exported="false"\n'
+           '        android:stopWithTask="false" />\n'
+           '    <service\n'
+           '        android:name="org.telegram.messenger.gramify.DevgramBubbleService"\n'
+           '        android:exported="false"\n'
            '        android:stopWithTask="false" />\n')
     if "GramifyBubbleService" not in t:
         idx = t.rfind("</application>")
@@ -417,7 +424,7 @@ def step_manifest(repo):
             print("   ! </application> nahi mila")
             return
         t = t[:idx] + svc + t[idx:]
-        print("   + service: GramifyBubbleService (round bubble)")
+        print("   + service: GramifyBubbleService + DevgramBubbleService (round bubble)")
     else:
         print("   = service pehle se hai")
 
@@ -444,10 +451,13 @@ def step_settings(repo):
             "getString(R.string.gramify_settings_music), getString(R.string.gramify_settings_music_info)));\n"
             "        items.add(SettingCell.Factory.of(102, IconBackgroundColors.PURPLE.top, "
             "IconBackgroundColors.PURPLE.bottom, R.drawable.gramify_mic, "
-            "getString(R.string.gramify_settings_voice), getString(R.string.gramify_settings_voice_info)));"
+            "getString(R.string.gramify_settings_voice), getString(R.string.gramify_settings_voice_info)));\n"
+            "        items.add(SettingCell.Factory.of(103, IconBackgroundColors.GREEN.top, "
+            "IconBackgroundColors.GREEN.bottom, R.drawable.gramify_mic, "
+            "getString(R.string.devgram_bot_settings), getString(R.string.devgram_bot_settings_info)));"
         )
         text = text.replace(anchor, rows, 1)
-        print("   + 2 rows add hue (Gramify Music / Gramify Voice)")
+        print("   + 3 rows add hue (Gramify Music / Gramify Voice / Devgram Bot)")
     else:
         print("   = rows already present")
 
@@ -463,10 +473,13 @@ def step_settings(repo):
             "                break;\n"
             "            case 102:\n"
             "                presentFragment(new org.telegram.messenger.gramify.VoiceEnhancerFragment());\n"
+            "                break;\n"
+            "            case 103:\n"
+            "                presentFragment(new org.telegram.messenger.gramify.DevgramBotFragment());\n"
             "                break;"
         )
         text = text.replace(anchor, cases, 1)
-        print("   + click cases (101/102) add hue")
+        print("   + click cases (101/102/103) add hue")
     else:
         print("   = cases already present")
 
@@ -626,6 +639,9 @@ def step_verify(repo):
         ("TMessagesProj/src/main/res/values/gramify_strings.xml", "gramify_settings_music"),
         ("TMessagesProj/src/main/res/drawable/gramify_music.xml", "vector"),
         ("TMessagesProj/src/main/res/drawable/gramify_mic.xml", "vector"),
+        ("TMessagesProj/src/main/java/org/telegram/messenger/gramify/DevgramBotPanel.java", "class DevgramBotPanel"),
+        ("TMessagesProj/src/main/java/org/telegram/messenger/gramify/DevgramBotFragment.java", "class DevgramBotFragment"),
+        ("TMessagesProj/src/main/java/org/telegram/messenger/gramify/DevgramBubbleService.java", "class DevgramBubbleService"),
     ]
     ok = True
     for rel, needle in checks:
