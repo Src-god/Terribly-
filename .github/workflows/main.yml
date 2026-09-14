@@ -132,25 +132,26 @@ jobs:
       #  ROBUST CLONE: submodule network failure = #1 build-fail ka karan.
       #  Ab submodules alag se, 3 baar retry ke saath chalti hain.
       # ------------------------------------------------------------------ #
-      - name: 6) Telegram clone (robust — submodule retry ke saath)
+      - name: 6) Telegram clone (proven: recurse-submodules + shallow)
         run: |
           set -e
           cd "$GITHUB_WORKSPACE"
-          echo "== main clone =="
-          git clone --depth 1 https://github.com/DrKLO/Telegram.git telegram 2>&1 | tail -5
+          echo "== clone (recurse-submodules, shallow) =="
+          git clone --depth 1 --recurse-submodules --shallow-submodules \
+              https://github.com/DrKLO/Telegram.git telegram 2>&1 | tail -8
           cd telegram
-          echo "main clone commit: $(git rev-parse --short HEAD)"
-          echo "== submodules (retry 3x) =="
-          for i in 1 2 3; do
-            echo "--- submodule attempt $i ---"
-            if git submodule update --init --recursive --depth 1; then
-              echo "submodules OK"
-              break
-            fi
-            echo "attempt $i fail, 15s wait..."
-            sleep 15
-          done
+          echo "commit: $(git rev-parse --short HEAD)"
+          echo "== submodule check =="
+          git submodule status | head -40
           echo "submodule count: $(git submodule status | wc -l)"
+          # Critical submodules check — missing = clear fail
+          for sm in TMessagesProj/jni/tgnet TMessagesProj/jni/libtgvoip TMessagesProj/jni/ffmpeg TMessagesProj/jni/libwebp; do
+            if [ -s "$sm/CMakeLists.txt" ] || [ -s "$sm/Android.mk" ] || [ -n "$(ls -A "$sm" 2>/dev/null | head -1)" ]; then
+              echo "OK   submodule: $sm"
+            else
+              echo "FAIL submodule: $sm (khaali hai)"
+            fi
+          done
           echo "repo size: $(du -sh . | cut -f1)"
 
       - name: 7) Android SDK
@@ -257,9 +258,16 @@ jobs:
             echo "================= GRADLE ERROR ================="
             grep -m1 -A20 "What went wrong" /tmp/gradle-build.log || true
             echo "---- error lines ----"
-            grep -m6 -E "^e: |error:|No matching client|Could not resolve|Could not find|Cannot|FAILURE:" /tmp/gradle-build.log | head -20
+            grep -m6 -E "^e: |error:|No matching client|Could not resolve|Could not find|Cannot|FAILURE:|NDK|CMake|Execution failed" /tmp/gradle-build.log | head -20
             echo "---- last 25 lines ----"
             tail -25 /tmp/gradle-build.log
+            # ANNOTATION: ye error GitHub ke summary me dikhega (bin login dekh sakte hain)
+            MSG="$(grep -m1 -A6 'What went wrong' /tmp/gradle-build.log | tail -n +2 | tr '\n' ' ' | sed 's/  */ /g' | cut -c1-400)"
+            if [ -z "$MSG" ]; then
+              MSG="$(grep -m1 -E "error:|FAILURE:|Could not|Cannot|No matching client|NDK" /tmp/gradle-build.log | cut -c1-400)"
+            fi
+            if [ -z "$MSG" ]; then MSG="gradle fail, log me detail"; fi
+            echo "::error title=GRADLE::$MSG"
             exit "$CODE"
           fi
           echo "---- APK ----"
